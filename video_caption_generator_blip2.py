@@ -107,7 +107,10 @@ class VideoProcessor:
         )
 
         summary = self.summarizer_tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return summary.split("<extra_id_1>")[2].strip().replace("Assistant", "").strip()
+        text = summary.split("<extra_id_1>")[2].strip().replace("Assistant", "").strip()
+        text = text.replace("The text repeatedly describes an ", "")
+        text = text.replace("The text describes various ", "")
+        return text
 
     def process_directory(self):
         video_files = [
@@ -144,7 +147,7 @@ class VideoProcessor:
 
 if __name__ == "__main__":
     config = {
-        "video_dir": r"C:\Users\user\Downloads\outputs\480x720\videos",
+        "video_dir": r"C:\Users\user\Downloads\outputs\480x720\test",
         "blip2_model": "Salesforce/blip2-opt-2.7b-coco",
         "summarizer_model": "nvidia/Mistral-NeMo-Minitron-8B-Instruct",
         "frame_interval": 0.05,
