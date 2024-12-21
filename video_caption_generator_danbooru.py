@@ -325,7 +325,7 @@ def process_all_videos_in_folder(
 
 # 使用例
 if __name__ == "__main__":
-    folder_path = r"C:\Users\user\Downloads\outputs\480x720\videos"
+    folder_path = r"C:\Users\user\Downloads\outputs\768x512\videos"
 
     process_all_videos_in_folder(
         folder_path=folder_path,

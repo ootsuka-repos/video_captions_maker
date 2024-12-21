@@ -4,164 +4,111 @@ import subprocess
 
 # 入出力ディレクトリを指定
 input_dir = r"C:\Users\user\Downloads\data"
-output_dir = r"C:\Users\user\Downloads\outputs"
+output_dir = r"C:\Users\user\Downloads\outputs2"
+
+# 解像度とFPS設定
+target_long = 768
+target_short = 512
+max_fps = 24
+max_frames = 144
 
 # 出力ディレクトリを作成
 os.makedirs(output_dir, exist_ok=True)
 
-# 解像度を設定
-target_long = 720
-target_short = 480
 
-# 最大FPSを設定
-max_fps = 60
+def get_resolution(aspect_ratio):
+    """アスペクト比に基づき解像度を返す"""
+    if aspect_ratio > 1:  # 横長
+        return target_long, target_short
+    return target_short, target_long
 
 
-# フレーム数を調整する
+def create_output_folders(resized_width, resized_height):
+    """出力フォルダを作成"""
+    folder_name = f"{resized_width}x{resized_height}"
+    resolution_folder_path = os.path.join(output_dir, folder_name)
+    videos_folder_path = os.path.join(resolution_folder_path, "videos")
+    os.makedirs(videos_folder_path, exist_ok=True)
+    return videos_folder_path
+
+
+def build_ffmpeg_command(input_path, output_path, width, height, fps, duration=None):
+    """ffmpegコマンドを構築"""
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-vf",
+        f"scale={width}:{height}",
+        "-r",
+        str(fps),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+    ]
+    if duration:
+        command.extend(["-t", str(duration)])
+    command.append(output_path)
+    return command
+
+
 def process_video(input_path, output_path, aspect_ratio):
+    """動画を処理"""
     try:
-        # 動画を読み込む
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
             raise Exception(f"Failed to open video file: {input_path}")
 
-        # 動画のプロパティを取得
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = min(cap.get(cv2.CAP_PROP_FPS), max_fps)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / fps
-
-        # FPSが60以上の場合は60に制限
-        if fps > max_fps:
-            fps = max_fps
-
-        # 縦長か横長かを判定して解像度を調整
-        if aspect_ratio > 1:  # 横長
-            resized_width = target_long
-            resized_height = target_short
-            folder_name = f"{resized_width}x{resized_height}"
-        else:  # 縦長
-            resized_height = target_long
-            resized_width = target_short
-            folder_name = f"{resized_width}x{resized_height}"
-
-        # 出力フォルダを作成
-        resolution_folder_path = os.path.join(output_dir, folder_name)
-        videos_folder_path = os.path.join(resolution_folder_path, "videos")
-
-        os.makedirs(videos_folder_path, exist_ok=True)
+        resized_width, resized_height = get_resolution(aspect_ratio)
+        videos_folder_path = create_output_folders(resized_width, resized_height)
 
         # 出力パスを更新
         output_path = os.path.join(videos_folder_path, os.path.basename(output_path))
 
-        # フレーム数を確認して調整
-        new_frame_count = total_frames  # 初期化
-        if total_frames % 4 != 0 and (total_frames + 1) % 4 != 0:
-            new_frame_count = (total_frames // 4) * 4
-            if new_frame_count < total_frames:
-                new_frame_count += 4
+        # フレーム数を調整
+        new_frame_count = ((total_frames + 3) // 4) * 4  # 4の倍数に調整
         new_duration = new_frame_count / fps
 
-        # ffmpegを使って動画を処理
-        command = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            input_path,
-            "-vf",
-            f"scale={resized_width}:{resized_height}",
-            "-t",
-            str(new_duration),
-            "-r",
-            str(fps),
-            "-c:v",
-            "libx264",
-            output_path,
-        ]
-
+        # ffmpegコマンド実行
+        command = build_ffmpeg_command(
+            input_path, output_path, resized_width, resized_height, fps, new_duration
+        )
         subprocess.run(command, check=True)
 
-        # 処理後の解像度とフレーム数を表示
-        print(f"Processed video resolution: {resized_width}x{resized_height}")
-        print(f"Processed video frame count: {new_frame_count}")
-        print(f"Processed video FPS: {fps}")
-
-        cap.release()
+        print(f"Processed video: {output_path} ({resized_width}x{resized_height})")
         return output_path
     except Exception as e:
-        print(f"Error processing {input_path}: {e}")
+        print(f"Error processing video: {e}")
         return None
 
 
-# GIFをMP4に変換する関数
 def convert_gif_to_mp4(input_path, output_path, aspect_ratio):
+    """GIFをMP4に変換"""
     try:
-        # 動画のアスペクト比を取得
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            raise Exception(f"Failed to open GIF file: {input_path}")
-
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        aspect_ratio = width / height
-        cap.release()
-
-        # 縦長か横長かを判定して解像度を調整
-        if aspect_ratio > 1:  # 横長
-            resized_width = target_long
-            resized_height = target_short
-            folder_name = f"{resized_width}x{resized_height}"
-        else:  # 縦長
-            resized_height = target_long
-            resized_width = target_short
-            folder_name = f"{resized_width}x{resized_height}"
-
-        # 出力フォルダを作成
-        resolution_folder_path = os.path.join(output_dir, folder_name)
-        videos_folder_path = os.path.join(resolution_folder_path, "videos")
-
-        os.makedirs(videos_folder_path, exist_ok=True)
-
-        # 出力パスを更新
+        resized_width, resized_height = get_resolution(aspect_ratio)
+        videos_folder_path = create_output_folders(resized_width, resized_height)
         output_path = os.path.join(videos_folder_path, os.path.basename(output_path))
 
-        # 解像度を偶数に調整
-        command = [
-            "ffmpeg",
-            "-y",
-            "-i",
-            input_path,
-            "-vf",
-            f"scale={resized_width}:{resized_height}",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            output_path,
-        ]
+        # ffmpegコマンド実行
+        command = build_ffmpeg_command(
+            input_path, output_path, resized_width, resized_height, max_fps
+        )
         subprocess.run(command, check=True)
 
-        print(f"Converted GIF to MP4 with resolution: {resized_width}x{resized_height}")
-
+        print(f"Converted GIF to MP4: {output_path} ({resized_width}x{resized_height})")
         return output_path
     except Exception as e:
-        print(f"Error converting GIF to MP4: {e}")
+        print(f"Error converting GIF: {e}")
         return None
 
 
-# repeat_video_if_shortを修正
 def repeat_video_if_short(output_path):
+    """短い動画を繰り返しフレーム数を増やす"""
     try:
-        # 出力パスからフォルダ名を取得
-        resolution_folder = os.path.basename(
-            os.path.dirname(os.path.dirname(output_path))
-        )
-        videos_folder = os.path.dirname(output_path)
-
-        # 一時ファイルのパスを作成
-        temp_output_path = os.path.join(
-            videos_folder, f"temp_{os.path.basename(output_path)}"
-        )
-
         cap = cv2.VideoCapture(output_path)
         if not cap.isOpened():
             raise Exception(f"Failed to open video file: {output_path}")
@@ -172,86 +119,70 @@ def repeat_video_if_short(output_path):
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
 
-        # 50フレームを超えるまで繰り返す
-        if total_frames <= 50:
-            # 新しい動画ファイルを作成
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
+        if total_frames >= max_frames:
+            return
 
-            # フレーム数を数える変数
-            current_total_frames = 0
+        temp_output_path = output_path.replace(".mp4", "_temp.mp4")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(temp_output_path, fourcc, fps, (width, height))
 
-            # 動画を繰り返し書き込む
-            while current_total_frames < 50:
-                cap = cv2.VideoCapture(output_path)
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    out.write(frame)
-                    current_total_frames += 1
-
-                    # 50フレームを超えたら停止
-                    if current_total_frames >= 50:
-                        break
-
-                cap.release()
-
-                if current_total_frames >= 50:
+        current_total_frames = 0
+        while current_total_frames < max_frames:
+            cap = cv2.VideoCapture(output_path)
+            while True:
+                ret, frame = cap.read()
+                if not ret or current_total_frames >= max_frames:
                     break
+                out.write(frame)
+                current_total_frames += 1
+            cap.release()
+        out.release()
 
-            out.release()
-
-            # 一時ファイルを元のファイルに置き換える
-            os.replace(temp_output_path, output_path)
-            print(f"Repeated video {output_path} until frame count is over 50.")
+        os.replace(temp_output_path, output_path)
+        print(f"Repeated video to match frame count: {output_path}")
     except Exception as e:
-        print(f"Error repeating video {output_path}: {e}")
+        print(f"Error repeating video: {e}")
+
+
+def process_files():
+    """入力ディレクトリ内のファイルを処理"""
+    for file_name in os.listdir(input_dir):
+        input_path = os.path.join(input_dir, file_name)
+        output_path = os.path.join(output_dir, f"{os.path.splitext(file_name)[0]}.mp4")
+
+        if file_name.lower().endswith((".mp4", ".avi", ".mov", ".webm")):
+            print(f"Processing video: {file_name}")
+            cap = cv2.VideoCapture(input_path)
+            if not cap.isOpened():
+                print(f"Failed to open video: {input_path}")
+                continue
+
+            aspect_ratio = cap.get(cv2.CAP_PROP_FRAME_WIDTH) / cap.get(
+                cv2.CAP_PROP_FRAME_HEIGHT
+            )
+            cap.release()
+
+            processed_path = process_video(input_path, output_path, aspect_ratio)
+            if processed_path:
+                repeat_video_if_short(processed_path)
+
+        elif file_name.lower().endswith(".gif"):
+            print(f"Converting GIF: {file_name}")
+            cap = cv2.VideoCapture(input_path)
+            if not cap.isOpened():
+                print(f"Failed to open GIF: {input_path}")
+                continue
+
+            aspect_ratio = cap.get(cv2.CAP_PROP_FRAME_WIDTH) / cap.get(
+                cv2.CAP_PROP_FRAME_HEIGHT
+            )
+            cap.release()
+
+            converted_path = convert_gif_to_mp4(input_path, output_path, aspect_ratio)
+            if converted_path:
+                repeat_video_if_short(converted_path)
 
 
 # メインスクリプト
-for file_name in os.listdir(input_dir):
-    input_path = os.path.join(input_dir, file_name)
-    if file_name.lower().endswith((".mp4", ".avi", ".mov", ".webm")):
-        output_path = os.path.join(output_dir, f"{os.path.splitext(file_name)[0]}.mp4")
-        print(f"Processing {file_name}...")
-
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            print(f"Failed to open video file: {input_path}")
-            continue
-
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        aspect_ratio = width / height
-        cap.release()
-
-        # Removed indexing related to prompt and videos
-
-        processed_output_path = process_video(input_path, output_path, aspect_ratio)
-        if processed_output_path:
-            print(f"Saved processed video to {processed_output_path}")
-            repeat_video_if_short(processed_output_path)
-
-    elif file_name.lower().endswith(".gif"):
-        output_path = os.path.join(output_dir, f"{os.path.splitext(file_name)[0]}.mp4")
-        print(f"Converting {file_name} to MP4...")
-
-        cap = cv2.VideoCapture(input_path)
-        if not cap.isOpened():
-            print(f"Failed to open GIF file: {input_path}")
-            continue
-
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        aspect_ratio = width / height
-        cap.release()
-
-        # Removed indexing related to prompt and videos
-
-        converted_output_path = convert_gif_to_mp4(
-            input_path, output_path, aspect_ratio
-        )
-        if converted_output_path:
-            print(f"Saved converted GIF to {converted_output_path}")
-            repeat_video_if_short(converted_output_path)
+if __name__ == "__main__":
+    process_files()
